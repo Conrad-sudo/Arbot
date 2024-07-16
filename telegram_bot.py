@@ -27,9 +27,9 @@ telepot.api._onetime_pool_spec = (urllib3.ProxyManager, dict(proxy_url=proxy_url
 
 
 #Set the telegram token
-telegram_token='6011995009:AAGcIiLgoXpIt6BbD3NB8cYHdUKJ3xDGKAA'
-group_chat_id="-1001824400414"
-user_whitelist=[850770583,1327691936,339052725]
+telegram_token=''
+group_chat_id=""
+user_whitelist=[]
 
 
 #Set up the connection with the bot API
