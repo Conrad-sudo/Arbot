@@ -3,6 +3,7 @@ import func_arb
 import time
 import random
 from itertools import combinations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 
@@ -35,58 +36,45 @@ red_list=["XNO/USDT","MC/USDT","SOUL/USDT","STC/USDT","HTR/USDT","ACA/USDT","LOV
 #Initialise the tradable pairs between exchanges
 def init_trade_pairs():
 
+    # Fetch all exchange market data in parallel
+    exchange_fetchers = {
+        "coinbase": (coinbase_url, func_arb.get_coinbase),
+        "kraken":   (kraken_url,   func_arb.get_kraken),
+        "okx":      (okx_url,      func_arb.get_okx),
+        "huobi":    (huobi_url,    func_arb.get_huobi),
+        "okcoin":   (okcoin_url,   func_arb.get_okcoin),
+        "kucoin":   (kucoin_url,   func_arb.get_kucoin),
+        "bittrex":  (bittrex_url,  func_arb.get_bittrex),
+        "bitget":   (bitget_url,   func_arb.get_bitget),
+        "binance":  (binance_url,  func_arb.get_binance),
+    }
 
-    # retrieve json objects from APIs
-    coinbase_market = func_arb.get_ticker(coinbase_url)
-    kraken_market=func_arb.get_ticker(kraken_url)
-    okx_market=func_arb.get_ticker(okx_url)
-    huobi_market=func_arb.get_ticker(huobi_url)
-    okcoin_market=func_arb.get_ticker(okcoin_url)
-    kucoin_market=func_arb.get_ticker(kucoin_url)
-    bittrex_market=func_arb.get_ticker(bittrex_url)
-    bitget_market=func_arb.get_ticker(bitget_url)
-    binance_market=func_arb.get_ticker(binance_url)
+    tickers = {}
+    with ThreadPoolExecutor() as executor:
+        futures = {
+            executor.submit(func_arb.get_ticker, url): (name, parser)
+            for name, (url, parser) in exchange_fetchers.items()
+        }
+        for future in as_completed(futures):
+            name, parser = futures[future]
+            tickers[name] = parser(future.result())
 
+    # NOTE: huobi must be last in ticker_list for find_common_pairs to work correctly
+    ticker_list = [
+        tickers["kraken"], tickers["coinbase"], tickers["okcoin"],
+        tickers["okx"], tickers["kucoin"], tickers["bittrex"],
+        tickers["binance"], tickers["bitget"], tickers["huobi"],
+    ]
 
-    #Get the tickers for each pair in the exchanges .Functions are unique because exchanges have different APIs
-    okcoin_tickers = func_arb.get_okcoin(okcoin_market)
-    kraken_tickers=func_arb.get_kraken(kraken_market)
-    coinbase_tickers=func_arb.get_coinbase(coinbase_market)
-    okx_tickers=func_arb.get_okx(okx_market)
-    huobi_tickers=func_arb.get_huobi(huobi_market)
-    kucoin_tickers=func_arb.get_kucoin(kucoin_market)
-    bittrex_tickers=func_arb.get_bittrex(bittrex_market)
-    bitget_tickers=func_arb.get_bitget(bitget_market)
-    binance_tickers=func_arb.get_binance(binance_market)
+    for exchange in combinations(ticker_list, 2):
+        # Get the exchange key (the key that is not "sign")
+        exc_1 = next(k for k in exchange[0] if k != "sign").replace("_pairs", "")
+        exc_2 = next(k for k in exchange[1] if k != "sign").replace("_pairs", "")
 
-
-
-
-    #list the tickers NOTE huobi should always be in last position !
-    ticker_list=[kraken_tickers,coinbase_tickers,okcoin_tickers,okx_tickers,kucoin_tickers,bittrex_tickers,binance_tickers,bitget_tickers,huobi_tickers]
-
-    combo_list = list()
-
-    #combine the tickers in unique pairs of 2
-    combo_list += list(combinations(ticker_list, 2))
-
-    for exchange in combo_list:
-        #print(exchange[0], " ", exchange[1])
-
-        # Get the pair names
-        for pair in exchange[0]:
-            exc_1 = pair.replace("_pairs","")
-
-        for pair in exchange[1]:
-            exc_2 = pair.replace("_pairs","")
-
-
-        common_pairs=func_arb.find_common_pairs(pair_1=exchange[0],pair_2=exchange[1])
+        common_pairs = func_arb.find_common_pairs(pair_1=exchange[0], pair_2=exchange[1])
 
         with open(f'trade_pairs_{exc_1}_{exc_2}.json', 'w') as f:
             json.dump(common_pairs, f)
-        f.close()
-
 
     print("Files saved!")
 
@@ -95,8 +83,8 @@ def init_trade_pairs():
 
 
 
-"Ask exchange: the exchange we BUY from"
-"Bid exchange : the exchange we SELL at"
+# Ask exchange: the exchange we BUY from
+# Bid exchange: the exchange we SELL at
 
 #Get the the calculated profit orderbook
 def find_arb( pair,ask_exchange,bid_exchange):
@@ -181,36 +169,24 @@ def find_arb( pair,ask_exchange,bid_exchange):
 
 
 
-#init_trade_pairs()
-
-#rates=find_arb( pair= ["APE/USDT"], ask_exchange="kraken", bid_exchange='okx')
-
-#print(rates)
-
-
 def launcher(input_pair):
 
-    ask_exchanges=["bitget","binance","bittrex","kraken","kucoin","okx","coinbase","okcoin","huobi"]
-    bid_exchages=["bitget","binance","bittrex","okx","kraken","kucoin","coinbase","okcoin","huobi"]
+    exchanges = ["bitget", "binance", "bittrex", "kraken", "kucoin", "okx", "coinbase", "okcoin", "huobi"]
+    ask_exchanges = exchanges[:]
+    bid_exchanges = exchanges[:]
 
     random.shuffle(ask_exchanges)
-    random.shuffle(bid_exchages)
+    random.shuffle(bid_exchanges)
 
     for ask in ask_exchanges:
-        for bid in bid_exchages:
-
+        for bid in bid_exchanges:
             if ask != bid:
+                print("Exchanges: ", ask + "/" + bid)
+                print("Pair*** ", input_pair)
 
-                combo=ask +"/"+bid
-                print("Exchanges: ",combo)
-                print("Pair*** ",input_pair )
+                rates = find_arb(pair=[input_pair], ask_exchange=ask, bid_exchange=bid)
 
-                rates= find_arb( pair=[input_pair], ask_exchange=ask, bid_exchange=bid)
-
-                if rates=='No common pairs' or rates=='No arbitrage found' or rates==[]:
-                    pass
-
-                else:
+                if rates not in ('No common pairs', 'No arbitrage found', []):
                     print(rates)
 
 
@@ -223,69 +199,55 @@ def launcher(input_pair):
 
 
 
+CONCAT_SIGN_EXCHANGES = {"huobi", "bitget", "binance"}
+
+
 def get_all_pairs():
 
-    all_pairs=[]
-    ask_exchanges = ["kraken", "kucoin", "okx", "coinbase", "okcoin", "huobi","bitget","binance","bittrex"]
-    bid_exchages = ["okx", "kraken", "kucoin", "coinbase", "okcoin", "huobi","bitget","binance","bittrex"]
+    seen = set()
+    all_pairs = []
+    exchanges = ["kraken", "kucoin", "okx", "coinbase", "okcoin", "huobi", "bitget", "binance", "bittrex"]
 
-    for ask in ask_exchanges:
-        for bid in bid_exchages:
-            if ask != bid:
-                ask_pair=ask+"_pairs"
-                bid_pair=bid+"_pairs"
+    for ask in exchanges:
+        for bid in exchanges:
+            if ask == bid:
+                continue
 
-                common_pairs=func_arb.get_trade_pairs(ask,bid)
+            common_pairs = func_arb.get_trade_pairs(ask, bid)
+            if not common_pairs:
+                continue
 
-                if ask !="huobi" and ask != "bitget" and ask !="binance":
-                    for pair in common_pairs[ask_pair]:
+            # For concat-sign exchanges the normalised pairs are in the other exchange's key
+            source_key = (bid if ask in CONCAT_SIGN_EXCHANGES else ask) + "_pairs"
 
-                        if "/" in pair and pair not in all_pairs:
-                            all_pairs.append(pair)
-
-                        if "-" in pair :
-                            new=pair.replace("-","/")
-
-                            if new not in all_pairs:
-                                all_pairs.append(new)
-                            else:
-                                pass
-
+            for pair in common_pairs[source_key]:
+                if "/" in pair:
+                    normalised = pair
+                elif "-" in pair:
+                    normalised = pair.replace("-", "/")
                 else:
+                    continue
 
-                    for pair in common_pairs[bid_pair]:
-
-                        if "/" in pair and pair not in all_pairs:
-                            all_pairs.append(pair)
-
-                        if "-" in pair:
-                            new = pair.replace("-", "/")
-
-                            if new not in all_pairs:
-                                all_pairs.append(new)
-                            else:
-                                pass
-
+                if normalised not in seen:
+                    seen.add(normalised)
+                    all_pairs.append(normalised)
 
     return all_pairs
 
 
 
 
-def run ():
-    all_pairs=get_all_pairs()
+def run():
+    all_pairs = get_all_pairs()
     random.shuffle(all_pairs)
-    #print(all_pairs)
 
     for pair in all_pairs:
-        #print("Pair**\n",pair)
-        #rates=find_arb( pair= [pair], ask_exchange="kraken", bid_exchange='okx')
         time.sleep(0.3)
         launcher(input_pair=pair)
 
 
-
-run()
+if __name__ == "__main__":
+    run()
 
 
 
