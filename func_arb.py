@@ -21,12 +21,10 @@ fee_dict = {
 
 
 # Retrieve the json object from the API
-def get_ticker(url):
-    url_req = requests.get(url)
-
-    # Covert to a json object
-    url_json = json.loads(url_req.text)
-    return url_json
+def get_ticker(url, timeout=10):
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
 
 
 
@@ -162,124 +160,82 @@ def get_binance(binance_market):
 
 
 #Find common pairs between different exchnages
-def find_common_pairs(pair_1,pair_2) :
+def find_common_pairs(pair_1, pair_2):
 
-    #Get the pair names
-    for pair in pair_1:
-        comp_1=pair
+    # Get the exchange key (the key that is not "sign")
+    comp_1 = next(k for k in pair_1 if k != "sign")
+    comp_2 = next(k for k in pair_2 if k != "sign")
 
-    for pair in pair_2:
-        comp_2= pair
-
-
-
-    sign_1 = pair_1["sign"]
-    sign_2 = pair_2["sign"]
-    sign_combo = sign_1 + sign_2
-
+    sign_combo = pair_1["sign"] + pair_2["sign"]
 
     a_pairs = []
     b_pairs = []
-    list_1 = ["/", "-", "*"]
-    list_2 = ["/", "-", "*"]
 
+    if sign_combo == "**":
+        for i_pair in pair_1[comp_1]:
+            for j_pair in pair_2[comp_2]:
+                if i_pair == j_pair.upper():
+                    a_pairs.append(i_pair)
+                    b_pairs.append(j_pair)
 
-    for sign_a in list_1:
-        for sign_b in list_2:
-            ref_combo = sign_a + sign_b
+    elif sign_combo == "/*":
+        # Reconstruct concatenated pairs (huobi/bitget/binance) to slash-separated form
+        indexer = []
+        for pair in pair_2[comp_2]:
+            pair_upper = pair.upper()
+            if 'HUSDT' in pair_upper:
+                indexer.append((pair_upper.replace('USDT', '/USDT'), pair))
+            elif 'HHUSD' in pair_upper:
+                indexer.append((pair_upper.replace('HUSD', '/USD'), pair))
+            elif 'USDT' in pair_upper:
+                indexer.append((pair_upper.replace('USDT', '/USDT'), pair))
+            elif 'USDC' in pair_upper:
+                indexer.append((pair_upper.replace('USDC', '/USDC'), pair))
+            elif 'EUR' in pair_upper:
+                indexer.append((pair_upper.replace('EUR', '/EUR'), pair))
 
-            if sign_combo == ref_combo and ref_combo == "**":
+        for i_pair in pair_1[comp_1]:
+            for j_pair in indexer:
+                if i_pair == j_pair[0]:
+                    a_pairs.append(i_pair)
+                    b_pairs.append(j_pair[1])
 
-                for i_pair in pair_1[comp_1]:
-                    for j_pair in pair_2[comp_2]:
-                        pair_upper = j_pair.upper()
-                        # print(pair_upper)
-                        if i_pair == pair_upper:
-                            a_pairs.append(i_pair)
-                            b_pairs.append(j_pair)
+    elif sign_combo == "--":
+        set_2 = set(pair_2[comp_2])
+        for i_pair in pair_1[comp_1]:
+            if i_pair in set_2:
+                a_pairs.append(i_pair)
+                b_pairs.append(i_pair)
 
+    elif sign_combo == "/-":
+        for i_pair in pair_2[comp_2]:
+            restruct = i_pair.replace('-', '/')
+            for j_pair in pair_1[comp_1]:
+                if restruct == j_pair:
+                    a_pairs.append(j_pair)
+                    b_pairs.append(i_pair)
 
-            if sign_combo == ref_combo and ref_combo == "/*":
+    elif sign_combo == "-*":
+        # Reconstruct concatenated pairs to dash-separated form
+        indexer = []
+        for pair in pair_2[comp_2]:
+            pair_upper = pair.upper()
+            if 'HUSDT' in pair_upper:
+                indexer.append((pair_upper.replace('USDT', '-USDT'), pair))
+            elif 'HHUSD' in pair_upper:
+                indexer.append((pair_upper.replace('HUSD', '-USD'), pair))
+            elif 'USDT' in pair_upper:
+                indexer.append((pair_upper.replace('USDT', '-USDT'), pair))
+            elif 'USDC' in pair_upper:
+                indexer.append((pair_upper.replace('USDC', '-USDC'), pair))
+            elif 'EUR' in pair_upper:
+                indexer.append((pair_upper.replace('EUR', '/EUR'), pair))
 
-                indexer = []
-                # Reconstruct huobi pairs
-
-                for pair in pair_2[comp_2]:
-                    pair_upper = pair.upper()
-                    if 'HUSDT' in pair_upper:
-                        new_pair = pair_upper.replace('USDT', '/USDT')
-                        indexer.append((new_pair, pair))
-                    elif 'HHUSD' in pair_upper:
-                        new_pair = pair_upper.replace('HUSD', '/USD')
-                        indexer.append((new_pair, pair))
-                    elif 'USDT' in pair_upper:
-                        new_pair = pair_upper.replace('USDT', '/USDT')
-                        indexer.append((new_pair, pair))
-
-                    elif 'USDC' in pair_upper:
-                        new_pair = pair_upper.replace('USDC', '/USDC')
-                        indexer.append((new_pair, pair))
-
-                    elif 'EUR' in pair_upper:
-                        new_pair = pair_upper.replace('EUR', '/EUR')
-                        indexer.append((new_pair, pair))
-
-                # Loop through coinbase pairs
-
-                for i_pair in pair_1[comp_1]:
-                    for j_pair in indexer:
-                        if i_pair == j_pair[0]:
-                            a_pairs.append(i_pair)
-                            b_pairs.append(j_pair[1])
-
-            if sign_combo == ref_combo and ref_combo == "--":
-
-                for i_pair in pair_1[comp_1]:
-                    for j_pair in pair_2[comp_2]:
-                        if i_pair == j_pair:
-                            a_pairs.append(i_pair)
-                            b_pairs.append(j_pair)
-
-
-            if sign_combo == ref_combo and ref_combo == "/-":
-
-                for i_pair in pair_2[comp_2]:
-                    restruct = i_pair.replace('-', '/')
-                    for j_pair in pair_1[comp_1]:
-                        if restruct == j_pair:
-                            a_pairs.append(j_pair)
-                            b_pairs.append(i_pair)
-
-            if sign_combo == ref_combo and ref_combo == "-*":
-
-                indexer = []
-
-                for pair in pair_2[comp_2]:
-                    pair_upper = pair.upper()
-                    if 'HUSDT' in pair_upper:
-                        new_pair = pair_upper.replace('USDT', '-USDT')
-                        indexer.append((new_pair, pair))
-                    elif 'HHUSD' in pair_upper:
-                        new_pair = pair_upper.replace('HUSD', '-USD')
-                        indexer.append((new_pair, pair))
-                    elif 'USDT' in pair_upper:
-                        new_pair = pair_upper.replace('USDT', '-USDT')
-                        indexer.append((new_pair, pair))
-                    elif 'USDC' in pair_upper:
-                        new_pair = pair_upper.replace('USDC', '-USDC')
-                        indexer.append((new_pair, pair))
-                    elif 'EUR' in pair_upper:
-                        new_pair = pair_upper.replace('EUR', '/EUR')
-                        indexer.append((new_pair, pair))
-
-                    # Loop through coinbase pairs
-
-                for i_pair in pair_1[comp_1]:
-                    for j_pair in indexer:
-                        if i_pair == j_pair[0]:
-                            a_pairs.append(i_pair)
-                            b_pairs.append(j_pair[1])
-
+        for i_pair in pair_1[comp_1]:
+            for j_pair in indexer:
+                if i_pair == j_pair[0]:
+                    a_pairs.append(i_pair)
+                    b_pairs.append(j_pair[1])
 
     trade_pairs = {comp_1: a_pairs, comp_2: b_pairs}
 
@@ -291,40 +247,25 @@ def find_common_pairs(pair_1,pair_2) :
 
 
 #retreive a trade pair from the json trade pairs
-def get_trade_pairs(ask_exchange,bid_exchange):
+def get_trade_pairs(ask_exchange, bid_exchange):
 
-    # Get the tradable pair dictionary according to the ask and bid exchanges. Just add the name of the exchange to the two lists
+    try:
+        try:
+            f = open(f'trade_pairs_{ask_exchange}_{bid_exchange}.json')
+        except FileNotFoundError:
+            f = open(f'trade_pairs_{bid_exchange}_{ask_exchange}.json')
 
-    list_1 = ["bittrex", "coinbase", "kucoin", "okx", "okcoin", "huobi", "kraken","bitget","binance"]
-    list_2 = ["bittrex", "coinbase", "kucoin", "okx", "okcoin", "huobi", "kraken","bitget","binance"]
+        with f:
+            return json.load(f)
 
-    combo = ask_exchange + "/" + bid_exchange
-
-    trade_pairs = ""
-
-    for exc_1 in list_1:
-        for exc_2 in list_2:
-            if exc_1 != exc_2:
-                ref_combo = exc_1 + "/" + exc_2
-                if combo == ref_combo:
-
-                    try:
-                        f = open(f'trade_pairs_{exc_1}_{exc_2}.json')
-
-                    except:
-                        f = open(f'trade_pairs_{exc_2}_{exc_1}.json')
-
-                    trade_pairs = json.load(f)
-                    f.close()
-
-    return trade_pairs
+    except FileNotFoundError:
+        return ""
 
 
 
 
 # Create a new list for selected coins pairs
-def select_pairs(trade_pairs, pair,ask_exchange,bid_exchange,ask_sign,bid_sign):
-
+def select_pairs(trade_pairs, pair, ask_exchange, bid_exchange, ask_sign, bid_sign):
 
     sign_combo = ask_sign + bid_sign
     ask_exc_pairs = trade_pairs[ask_exchange]
@@ -332,61 +273,42 @@ def select_pairs(trade_pairs, pair,ask_exchange,bid_exchange,ask_sign,bid_sign):
     selected_ask_exc_pairs = []
     selected_bid_exc_pairs = []
 
-    list_1=["/","-","*"]
-    list_2=["/","-","*"]
-
     for p in pair:
 
         ref = p.split("/")
 
-        for sign_1 in list_1:
-            for sign_2 in list_2:
+        for i in range(len(ask_exc_pairs)):
 
-                ref_sign = sign_1 + sign_2
+            if sign_combo == "/-":
+                exc_ref = bid_exc_pairs[i].split("-")
+            elif sign_combo == "-/":
+                exc_ref = ask_exc_pairs[i].split("-")
+            elif sign_combo == "*/":
+                exc_ref = bid_exc_pairs[i].split("/")
+            elif sign_combo == "/*":
+                exc_ref = ask_exc_pairs[i].split("/")
+            elif sign_combo == "-*":
+                exc_ref = ask_exc_pairs[i].split("-")
+            elif sign_combo == "*-":
+                exc_ref = bid_exc_pairs[i].split("-")
+            elif sign_combo == "--":
+                exc_ref = ask_exc_pairs[i].split("-")
+            elif sign_combo == "**":
+                exc_ref = ask_exc_pairs[i].upper()
+                other_exc_ref = bid_exc_pairs[i].upper()
+            else:
+                break
 
-                for i in range(0, len(ask_exc_pairs)):
+            if isinstance(exc_ref, list):
+                if ref[0] == exc_ref[0] and ref[1] == exc_ref[1]:
+                    selected_ask_exc_pairs.append(trade_pairs[ask_exchange][i])
+                    selected_bid_exc_pairs.append(trade_pairs[bid_exchange][i])
 
-                    if sign_combo == ref_sign and ref_sign == "/-":
-                        exc_ref = bid_exc_pairs[i].split("-")
-
-                    elif sign_combo == ref_sign and ref_sign == "-/":
-                        exc_ref = ask_exc_pairs[i].split("-")
-
-                    elif sign_combo == ref_sign and ref_sign == "*/":
-                        exc_ref = bid_exc_pairs[i].split("/")
-
-                    elif sign_combo == ref_sign and ref_sign == "/*":
-                        exc_ref = ask_exc_pairs[i].split("/")
-
-                    elif sign_combo == ref_sign and ref_sign == "-*":
-                        exc_ref = ask_exc_pairs[i].split("-")
-
-                    elif sign_combo == ref_sign and ref_sign == "*-":
-                        exc_ref = bid_exc_pairs[i].split("-")
-
-                    elif sign_combo == ref_sign and ref_sign == "--":
-                        exc_ref = ask_exc_pairs[i].split("-")
-
-                    elif sign_combo == ref_sign and ref_sign == "**":
-                        exc_ref = ask_exc_pairs[i].upper()
-                        other_exc_ref = bid_exc_pairs[i].upper()
-
-                    else:
-                        break
-
-                    if type(exc_ref) == list:
-                        if ref[0] == exc_ref[0] and ref[1] == exc_ref[1]:
-                            selected_ask_exc_pairs.append(trade_pairs[ask_exchange][i])
-                            selected_bid_exc_pairs.append(trade_pairs[bid_exchange][i])
-
-                    elif type(exc_ref) == str:
-                        new_ref=ref[0]+ref[1]
-                        if exc_ref == other_exc_ref and exc_ref==new_ref:
-                            selected_ask_exc_pairs.append(trade_pairs[ask_exchange][i])
-                            selected_bid_exc_pairs.append(trade_pairs[bid_exchange][i])
-
-
-
+            elif isinstance(exc_ref, str):
+                new_ref = ref[0] + ref[1]
+                if exc_ref == other_exc_ref and exc_ref == new_ref:
+                    selected_ask_exc_pairs.append(trade_pairs[ask_exchange][i])
+                    selected_bid_exc_pairs.append(trade_pairs[bid_exchange][i])
 
     selected_trade_pairs = {bid_exchange: selected_bid_exc_pairs, ask_exchange: selected_ask_exc_pairs}
 
@@ -541,31 +463,23 @@ def sort_price( selected_trade_pairs,bid_exchange,ask_exchange):
 
 
 # Calculate the surface rate
-def calc_surf_rate(price_dict, selected_trade_pairs, ask_exchange,bid_exchange):
+def calc_surf_rate(price_dict, selected_trade_pairs, ask_exchange, bid_exchange):
 
-
-    counter = 0
     surf_rate_list = []
-    ask_price_list=price_dict[ask_exchange]
+    ask_price_list = price_dict[ask_exchange]
     bid_price_list = price_dict[bid_exchange]
 
+    for counter in range(len(ask_price_list)):
 
-    while counter < len(ask_price_list):
+        ask_price = float(ask_price_list[counter]['ask'])
+        bid_price = float(bid_price_list[counter]['bid'])
 
-        #ask_price_list_bid = float(ask_price_list[counter]['bid'])
-        ask_price_list_ask = float(ask_price_list[counter]['ask'])
-        bid_price_list_bid = float(bid_price_list[counter]['bid'])
-        #bid_price_list_ask = float(bid_price_list[counter]['ask'])
-
-
-        #When none of the exchanges are Turkish
-        if  ask_price_list_ask< bid_price_list_bid :
-            bid_exchange_pairs = selected_trade_pairs[bid_exchange][counter]
-            ask_exchange_pairs = selected_trade_pairs[ask_exchange][counter]
-            stats = {ask_exchange: ask_exchange_pairs, bid_exchange: bid_exchange_pairs}
+        if ask_price < bid_price:
+            stats = {
+                ask_exchange: selected_trade_pairs[ask_exchange][counter],
+                bid_exchange: selected_trade_pairs[bid_exchange][counter],
+            }
             surf_rate_list.append(stats)
-
-        counter += 1
 
     return surf_rate_list
 
@@ -733,47 +647,23 @@ def get_orderbook(surface_rate_list, ask_exchange, bid_exchange, depth):
 
 
 # Calculate the profit based on orderbook depth
-def calc_depth(arb_orderbook,ask_exchange,bid_exchange):
+def calc_depth(arb_orderbook, ask_exchange, bid_exchange):
 
-
-
-    combo = ask_exchange + '/' + bid_exchange
-    counter = 0
     depth_rate_list = []
-    global message
-    global table
     orderbook_ref = ask_exchange.replace('pairs', 'orderbook')
 
-    #Doesnt matter how you add the exchnages here
-    list_1 = ["bittrex_pairs", "coinbase_pairs", "kucoin_pairs", "okx_pairs", "okcoin_pairs", "huobi_pairs","kraken_pairs","bitget_pairs","binance_pairs"]
-    list_2 = ["bittrex_pairs", "coinbase_pairs", "kucoin_pairs", "okx_pairs", "okcoin_pairs", "huobi_pairs","kraken_pairs","bitget_pairs","binance_pairs"]
 
 
 
 
+    ask_orderbook = arb_orderbook[ask_exchange.replace("pairs", "orderbook")]
+    bid_orderbook = arb_orderbook[bid_exchange.replace("pairs", "orderbook")]
 
-    ask_orderbook=""
-    bid_orderbook=""
-
-
-    #Get the orderbooks by looping thouhgh lists
-    for ask_exc in list_1:
-        for bid_exc in list_2:
-
-            if ask_exc !=bid_exc:
-                ref= ask_exc+"/"+bid_exc
-
-                if ref==combo:
-                    ask_exc_ob= ask_exc.replace("pairs","orderbook")
-                    bid_exc_ob= bid_exc.replace("pairs","orderbook")
-                    ask_orderbook=arb_orderbook[ask_exc_ob]
-                    bid_orderbook=arb_orderbook[bid_exc_ob]
-
-
-
+    ask_ref = ask_exchange.replace('_pairs', '')
+    bid_ref = bid_exchange.replace('_pairs', '')
 
     # Loop through the orderbook
-    while counter < len(arb_orderbook[orderbook_ref]):
+    for counter in range(len(arb_orderbook[orderbook_ref])):
 
 
         # Get pair name
@@ -790,92 +680,56 @@ def calc_depth(arb_orderbook,ask_exchange,bid_exchange):
 
 
 
-        price_counter = 0
+        for price_counter in range(len(bid_prices)):
 
-
-
-        #Calculatre the profit levels
-        while price_counter < len(bid_prices):
-
-            #Both foreign exchanges
             ask = float(ask_prices[price_counter][0])
             bid = float(bid_prices[price_counter][0])
 
-            #Calculate the profit levels
-            for ask_exc in list_1:
-                for bid_exc in list_2:
+            profit = (bid * (1 - fee_dict[bid_exchange])) - (ask * (1 + fee_dict[ask_exchange]))
+            profit_perc = (profit / ask) * 100
 
-                    if ask_exchange == ask_exc and bid_exchange == bid_exc:
-                        profit = (bid * (1 - fee_dict[bid_exchange])) - (ask * (1 + fee_dict[ask_exchange]))
-                        profit_perc = (profit / ask) * 100
-                        break
-
-
-            orderbook_position=price_counter+1
-
-            #get the appropriate volume
+            orderbook_position = price_counter + 1
 
             if float(bid_prices[price_counter][1]) > float(ask_prices[price_counter][1]):
                 vol = float(ask_prices[price_counter][1])
             else:
                 vol = float(bid_prices[price_counter][1])
 
-            # Check for minimum profit
+            if orderbook_position <= 5:
+                orderbook.append((ask, bid, vol, profit_perc, orderbook_position))
 
-            if orderbook_position <= 5 :
-                #Add the
-                orderbook.append((ask, bid, vol, profit_perc,orderbook_position))
-
-
-            price_counter += 1
-
-        #print("orderbook ",orderbook)
-
-        if len(orderbook)==0:
+        if len(orderbook) == 0:
             return []
 
-        #else:
-           # print("orderbook ",orderbook)
-
-        #Get the total volume
         total_vol = 0
-        total_ask_price=0
-        total_bid_price=0
-        total_weight=0
+        total_ask_price = 0
+        total_bid_price = 0
+        total_weight = 0
 
         for i in orderbook:
             total_vol += i[2]
-            total_weight+=i[2]*i[3]
-            total_ask_price+=i[0]*i[2]
-            total_bid_price+=i[1]*i[2]
+            total_weight += i[2] * i[3]
+            total_ask_price += i[0] * i[2]
+            total_bid_price += i[1] * i[2]
 
-        weighted_profit=total_weight/total_vol
-
-
-        weighted_profit = "{:.2f}".format(weighted_profit)
-        total_ask_price="{:.2f}".format(total_ask_price)
-        total_bid_price="{:.2f}".format(total_bid_price)
+        weighted_profit = "{:.2f}".format(total_weight / total_vol)
+        total_ask_price = "{:.2f}".format(total_ask_price)
+        total_bid_price = "{:.2f}".format(total_bid_price)
 
         ask_1 = orderbook[0][0]
-
         bid_1 = orderbook[0][1]
 
-
-
-
-        ask_ref= ask_exchange.replace('_pairs','')
-        bid_ref=bid_exchange.replace('_pairs','')
-
-
-        message= f"pair: {pair_name}\n" \
-                 f"buy exc: {ask_ref}\n" \
-                 f"sell exc: {bid_ref}\n" \
-                 f"buy: {ask_1 }\n" \
-                 f"sell: {bid_1}\n" \
-                 f"buy USD: {total_ask_price}\n" \
-                 f"sell USD: {total_bid_price}\n" \
-                 f"vol: {total_vol}\n" \
-                 f"wei prof%: {weighted_profit}\n"
+        message = (
+            f"pair: {pair_name}\n"
+            f"buy exc: {ask_ref}\n"
+            f"sell exc: {bid_ref}\n"
+            f"buy: {ask_1}\n"
+            f"sell: {bid_1}\n"
+            f"buy USD: {total_ask_price}\n"
+            f"sell USD: {total_bid_price}\n"
+            f"vol: {total_vol}\n"
+            f"wei prof%: {weighted_profit}\n"
+        )
 
 
 
@@ -883,9 +737,7 @@ def calc_depth(arb_orderbook,ask_exchange,bid_exchange):
 
         depth_rate_list.append(message)
 
-        counter += 1
-
-    return message
+    return depth_rate_list
 
 
 
