@@ -1,5 +1,8 @@
 import json
+import logging
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -450,9 +453,11 @@ def sort_price( selected_trade_pairs,bid_exchange,ask_exchange):
 
         return price_dict
 
-    except KeyError:
+    except (KeyError, IndexError) as e:
+        logger.error("sort_price failed: %s", e)
         return []
-    except IndexError:
+    except requests.exceptions.RequestException as e:
+        logger.error("sort_price network error: %s", e)
         return []
 
 
@@ -637,8 +642,11 @@ def get_orderbook(surface_rate_list, ask_exchange, bid_exchange, depth):
 
         return arb_orderbook
 
-
-    except IndexError:
+    except (KeyError, IndexError) as e:
+        logger.error("get_orderbook failed: %s", e)
+        return []
+    except requests.exceptions.RequestException as e:
+        logger.error("get_orderbook network error: %s", e)
         return []
 
 
@@ -680,7 +688,7 @@ def calc_depth(arb_orderbook, ask_exchange, bid_exchange):
 
 
 
-        for price_counter in range(len(bid_prices)):
+        for price_counter in range(min(len(ask_prices), len(bid_prices))):
 
             ask = float(ask_prices[price_counter][0])
             bid = float(bid_prices[price_counter][0])

@@ -1,9 +1,14 @@
 import json
+import logging
+import requests
 import func_arb
 import time
 import random
 from itertools import combinations
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 
@@ -57,14 +62,14 @@ def init_trade_pairs():
         }
         for future in as_completed(futures):
             name, parser = futures[future]
-            tickers[name] = parser(future.result())
+            try:
+                tickers[name] = parser(future.result())
+            except Exception as e:
+                logger.error("Failed to fetch tickers for %s: %s", name, e)
 
     # NOTE: huobi must be last in ticker_list for find_common_pairs to work correctly
-    ticker_list = [
-        tickers["kraken"], tickers["coinbase"], tickers["okcoin"],
-        tickers["okx"], tickers["kucoin"], tickers["bittrex"],
-        tickers["binance"], tickers["bitget"], tickers["huobi"],
-    ]
+    ordered_names = ["kraken", "coinbase", "okcoin", "okx", "kucoin", "bittrex", "binance", "bitget", "huobi"]
+    ticker_list = [tickers[name] for name in ordered_names if name in tickers]
 
     for exchange in combinations(ticker_list, 2):
         # Get the exchange key (the key that is not "sign")
@@ -87,23 +92,23 @@ def init_trade_pairs():
 # Bid exchange: the exchange we SELL at
 
 #Get the the calculated profit orderbook
-def find_arb( pair,ask_exchange,bid_exchange):
+def find_arb(pair, ask_exchange, bid_exchange):
 
+    if ask_exchange not in exchange_dict or bid_exchange not in exchange_dict:
+        logger.error("Unknown exchange: ask=%s bid=%s", ask_exchange, bid_exchange)
+        return []
 
-    combo=ask_exchange+"/"+bid_exchange
+    combo = ask_exchange + "/" + bid_exchange
 
     if "kucoin" in combo and "huobi" in combo and pair[0] in red_list:
         return []
 
-    #1
-    trade_pairs=func_arb.get_trade_pairs(ask_exchange , bid_exchange)
-    if trade_pairs =="":
+    trade_pairs = func_arb.get_trade_pairs(ask_exchange, bid_exchange)
+    if trade_pairs == "":
         return []
 
-    #print('****Trade pairs**** ', trade_pairs)
-
-    ask_sign=exchange_dict[ask_exchange]
-    bid_sign=exchange_dict[bid_exchange]
+    ask_sign = exchange_dict[ask_exchange]
+    bid_sign = exchange_dict[bid_exchange]
     ask_exchange = ask_exchange + "_pairs"
     bid_exchange = bid_exchange + "_pairs"
 
@@ -146,11 +151,11 @@ def find_arb( pair,ask_exchange,bid_exchange):
     # Calculate the orderbook depth
 
         rates= func_arb.calc_depth(arb_orderbook, ask_exchange,bid_exchange)
-    except IndexError:
+    except (IndexError, TypeError, KeyError) as e:
+        logger.error("find_arb error (%s/%s): %s", ask_exchange, bid_exchange, e)
         return []
-    except TypeError:
-        return []
-    except KeyError:
+    except requests.exceptions.RequestException as e:
+        logger.error("find_arb network error (%s/%s): %s", ask_exchange, bid_exchange, e)
         return []
 
 
