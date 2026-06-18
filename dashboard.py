@@ -1,9 +1,9 @@
 from tkinter import *
+from tkinter import scrolledtext
 import main
 import func_arb
-from pandastable import Table
 
-root= Tk()
+root = Tk()
 root.title('ARBOT')
 
 # make app width,height resizable
@@ -27,128 +27,77 @@ root.grid_rowconfigure(index=10,weight=1)
 root.grid_rowconfigure(index=12,weight=1)
 root.grid_rowconfigure(index=13,weight=1)
 
-alpharates_url = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=TRY&apikey=AE966LKHL236KP1K'
-
-table_list=[]
-
-def show_livesrates():
-
-       alpharates_market = func_arb.get_ticker(alpharates_url)
-
-       # Only retieves
-       liverate_tickers = func_arb.get_alpha_rate(alpharates_market)
-       liverate_bid = liverate_tickers['bid']
-       liverate_ask = liverate_tickers['ask']
-
-       rates_label_1.configure(text=f'LIVERATES  USD/TRY: ask {liverate_ask}  bid {liverate_bid}')
-
-       root.after(10000,show_livesrates)
+# Widget reference for the live results text area
+_arb_text = None
+choices = []
 
 
-
-
-def update():
-
-    rates = main.find_arb( pair=choices, ask_exchange=ask_scenario_pick.get(), bid_exchange=bid_scenario_pick.get() )
-
-    global table_list
-    position=0
+def _refresh_results():
+    """Fetch latest arb results and update the text display. Reschedules itself."""
+    global _arb_text
+    if _arb_text is None:
+        return
     try:
-        for el in table_list:
-            el.model.df = rates[table_list.index(el)]
-            el.redraw()
-    except IndexError:
-        table_list[position].model.df={
-            f'Ask': ['', '', '', '', '','', ],
-            f' Bid': ['', '', '', '', '','', ],
-            'Vol': ['', '', '', '', '','', ],
-            'Min Prof': ['1%', '0.75%', '0.5%', '0.25%', '0.1%', '0.01 %',],
-            'Weighted': ['', '', '', '', '', '',]
-        }
+        if not _arb_text.winfo_exists():
+            return
+    except TclError:
+        return
+
+    el = main.find_arb(
+        pair=choices,
+        ask_exchange=ask_scenario_pick.get(),
+        bid_exchange=bid_scenario_pick.get(),
+    )
+
+    _arb_text.configure(state='normal')
+    _arb_text.delete('1.0', 'end')
+
+    if isinstance(el, list) and el:
+        for msg in el:
+            _arb_text.insert('end', msg + '\n' + '-' * 40 + '\n')
+    elif isinstance(el, str):
+        _arb_text.insert('end', el)
+    else:
+        _arb_text.insert('end', 'No arbitrage found')
+
+    _arb_text.configure(state='disabled')
+    _arb_text.after(6000, _refresh_results)
 
 
-
-    root.after(6000, update)
-
-
-
-#Build a list of pairs that can be passed to the main function to find arbitrages
+# Build a list of pairs that can be passed to the main function to find arbitrages
 def get_list():
+    global choices, _arb_text
 
-    global choices
     choices = []
 
-    # Create the reordered pair list by taking the ones that are not empty and combining them with the quote string
     for p in pairs:
         if p.get() != '':
             choices.append(p.get() + quote_pick.get())
 
-    #Check if the exchanges are the same
-    if ask_scenario_pick.get()==bid_scenario_pick.get():
+    if ask_scenario_pick.get() == bid_scenario_pick.get():
         error_label.configure(text='Same exchanges')
-
-    # If the user didn't choose a currency
     elif len(choices) == 0:
         error_label.configure(text='Choose base pair')
-
-    elif quote_pick.get()=='':
+    elif quote_pick.get() == '':
         error_label.configure(text='Choose quote pair')
-
-    elif ask_scenario_pick.get()=='':
+    elif ask_scenario_pick.get() == '':
         error_label.configure(text='Choose ask exchange')
-
-    elif bid_scenario_pick.get()=='':
+    elif bid_scenario_pick.get() == '':
         error_label.configure(text='Choose bid exchange')
-
-
     else:
+        error_label.configure(text='')
 
-        #if len(choices) > 4:
-            #error_label.configure(text='')
-            #error_label.configure(text='Please choose a maximum of 4 pairs')
+        # Use Toplevel so there is only ever one Tk root event loop
+        arb_window = Toplevel(root)
+        arb_window.title('Arbitrage')
+        arb_window.geometry('700x500')
 
+        _arb_text = scrolledtext.ScrolledText(
+            arb_window, width=80, height=30, font=('Courier', 10), state='disabled'
+        )
+        _arb_text.pack(fill='both', expand=True)
 
-        # Get the arbitrage rate list
-
-        arb_window = Tk()
-        arb_window.title('Arbitrage ')
-        el = main.find_arb(pair=choices, ask_exchange=ask_scenario_pick.get(), bid_exchange=bid_scenario_pick.get())
-        counter = 0
-
-        # If there is an arbitrage opportunity// Initialise the tables
-        if isinstance(el, list) == True and len(el) > 0:
-
-            error_label.configure(text='')
-
-            grid_plan = [(0, 0), (0, 1), (1, 0), (1, 1), (0, 2), (1, 2)]
-
-
-            # loop through the pairs and find the rates
-            while counter < len(el):
-                # Create a frame for the table
-                frame_counter = Frame(arb_window)
-                frame_counter.grid(row=grid_plan[counter][0], column=grid_plan[counter][1])
-                # fill = 'both', expand = True
-
-                # Create a table from the dataframe and append it to the frame
-                table_counter = Table(frame_counter, dataframe=el[counter], height=135)
-                table_list.append(table_counter)
-                table_counter.show()
-
-                counter += 1
-            update()
-
-
-        elif isinstance(el, str) == True:
-            error_label.configure(text=el)
-
-def test():
-    # Create the reordered pair list by taking the ones that are not empty and combining them with the quote string
-    choices=[]
-    for p in pairs:
-        if p.get() != '':
-            choices.append(p.get())
-    print(choices)
+        _refresh_results()
 
 
 #Rates label
@@ -375,26 +324,26 @@ ask_scenario_label= Label(frame_1,text='Ask exchange',font=('Arial',15,'bold'), 
 ask_scenario_pick =StringVar()
 
 # Ask Buttons
-ftx_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='ftx_pairs', offvalue='', text='FTX', width=12,font=('Arial',13,'bold')).grid(row=10,column=0)
-btcturk_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='btcturk_pairs', offvalue='', text='BtcTurk', width=12,font=('Arial',13,'bold')).grid(row=10,column=1)
-coinbase_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='coinbase_pairs', offvalue='', text='Coinbase', width=12,font=('Arial',13,'bold')).grid(row=10,column=2)
-kraken_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='kraken_pairs', offvalue='', text='Kraken', width=12,font=('Arial',13,'bold')).grid(row=11,column=0)
-okx_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='okx_pairs', offvalue='', text='Okx', width=12,font=('Arial',13,'bold')).grid(row=11,column=1)
-okcoin_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='okcoin_pairs', offvalue='', text='Okcoin', width=12,font=('Arial',13,'bold')).grid(row=11,column=2)
-huobi_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='huobi_pairs', offvalue='', text='Huobi', width=12,font=('Arial',13,'bold')).grid(row=12,column=0)
+kucoin_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='kucoin', offvalue='', text='Kucoin', width=12,font=('Arial',13,'bold')).grid(row=10,column=0)
+binance_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='binance', offvalue='', text='Binance', width=12,font=('Arial',13,'bold')).grid(row=10,column=1)
+coinbase_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='coinbase', offvalue='', text='Coinbase', width=12,font=('Arial',13,'bold')).grid(row=10,column=2)
+kraken_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='kraken', offvalue='', text='Kraken', width=12,font=('Arial',13,'bold')).grid(row=11,column=0)
+okx_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='okx', offvalue='', text='Okx', width=12,font=('Arial',13,'bold')).grid(row=11,column=1)
+okcoin_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='okcoin', offvalue='', text='Okcoin', width=12,font=('Arial',13,'bold')).grid(row=11,column=2)
+huobi_ask_check=Checkbutton(frame_1,variable=ask_scenario_pick, onvalue='huobi', offvalue='', text='Huobi', width=12,font=('Arial',13,'bold')).grid(row=12,column=0)
 
 #Scenario Label for Bid exchange
 bid_scenario_label= Label(frame_1,text='Bid exchange',font=('Arial',15,'bold'), fg='#7A796E').grid(row=13, column=0,pady=(30,20),padx=10, sticky='w')
 bid_scenario_pick =StringVar()
 
 #Bid Buttons
-ftx_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='ftx_pairs', offvalue='', text='FTX', width=12,font=('Arial',13,'bold')).grid(row=14,column=0)
-btcturk_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='btcturk_pairs', offvalue='', text='BtcTurk', width=12,font=('Arial',13,'bold')).grid(row=14,column=1)
-coinbase_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='coinbase_pairs', offvalue='', text='Coinbase', width=12,font=('Arial',13,'bold')).grid(row=14,column=2)
-kraken_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='kraken_pairs', offvalue='', text='Kraken', width=12,font=('Arial',13,'bold')).grid(row=15,column=0)
-okx_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='okx_pairs', offvalue='', text='Okx', width=12,font=('Arial',13,'bold')).grid(row=15,column=1)
-okcoin_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='okcoin_pairs', offvalue='', text='Okcoin', width=12,font=('Arial',13,'bold')).grid(row=15,column=2)
-huobi_ask_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='huobi_pairs', offvalue='', text='Huobi', width=12,font=('Arial',13,'bold')).grid(row=16,column=0)
+kucoin_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='kucoin', offvalue='', text='Kucoin', width=12,font=('Arial',13,'bold')).grid(row=14,column=0)
+binance_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='binance', offvalue='', text='Binance', width=12,font=('Arial',13,'bold')).grid(row=14,column=1)
+coinbase_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='coinbase', offvalue='', text='Coinbase', width=12,font=('Arial',13,'bold')).grid(row=14,column=2)
+kraken_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='kraken', offvalue='', text='Kraken', width=12,font=('Arial',13,'bold')).grid(row=15,column=0)
+okx_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='okx', offvalue='', text='Okx', width=12,font=('Arial',13,'bold')).grid(row=15,column=1)
+okcoin_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='okcoin', offvalue='', text='Okcoin', width=12,font=('Arial',13,'bold')).grid(row=15,column=2)
+huobi_bid_check=Checkbutton(frame_1,variable=bid_scenario_pick, onvalue='huobi', offvalue='', text='Huobi', width=12,font=('Arial',13,'bold')).grid(row=16,column=0)
 
 
 
